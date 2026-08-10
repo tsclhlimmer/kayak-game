@@ -138,11 +138,11 @@
     const type = Math.random();
     if (type < 0.6) {
       const r = 20 + Math.random() * 22;
-      obstacles.push({ kind: 'rock', x, r, vy: 0, s: 1 + Math.random() * 0.5 });
+      obstacles.push({ kind: 'rock', x, y: -20, r, vy: 0, s: 1 + Math.random() * 0.5 });
     } else if (type < 0.9) {
       const len = 56 + Math.random() * 50;
       const w = 14 + Math.random() * 8;
-      obstacles.push({ kind: 'log', x, len, w, vy: 0, s: 1 + Math.random() * 0.5, spin: Math.random() * 0.02 });
+      obstacles.push({ kind: 'log', x, y: -20, len, w, vy: 0, s: 1 + Math.random() * 0.5, spin: Math.random() * 0.02 });
     } else {
       splashes.push({ x, y: -20, r: 10, taken: false, wob: Math.random() * 6.28 });
     }
@@ -187,11 +187,11 @@
 
     const spd = currentSpeed();
 
-    // spawn
-    spawnTimer -= dt * 60;
+    // spawn — one obstacle every ~1.4–2s, gradually faster over time
+    spawnTimer -= dt;
     if (spawnTimer <= 0) {
       spawn();
-      spawnTimer = Math.max(24, 52 - hardTimer) + Math.random() * 42;
+      spawnTimer = Math.max(450, 1600 - time / 15) + Math.random() * 400;
     }
     hardTimer += dt;
 

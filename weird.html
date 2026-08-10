@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kayak Rapids: WEIRD MODE</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #101020;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: "Comic Sans MS", system-ui, sans-serif;
+    color: #fff;
+  }
+  h1 { margin-bottom: 8px; letter-spacing: 2px; animation: hue 3s linear infinite; }
+  @keyframes hue { from { filter: hue-rotate(0deg); } to { filter: hue-rotate(360deg); } }
+  #wrap { position: relative; }
+  canvas { display: block; border-radius: 8px; box-shadow: 0 0 40px rgba(255,0,255,.6); }
+  #hud { display: flex; justify-content: space-between; width: 100%; padding: 8px 12px; font-size: 16px; font-weight: bold; }
+  #msg {
+    position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%);
+    text-align: center; background: rgba(0,0,0,.8); padding: 24px 32px;
+    border-radius: 12px; display: none; font-size: 18px; border: 3px dashed #ff00ff;
+  }
+  #msg button { margin-top: 16px; padding: 10px 24px; font-size: 16px; border: none; border-radius: 999px;
+    background: linear-gradient(90deg, red, orange, yellow, green, blue, purple); color: black; cursor: pointer; font-weight: bold; }
+  #msg button:hover { transform: rotate(3deg) scale(1.1); }
+  .keys { font-size: 13px; opacity: .8; margin-top: 6px; }
+</style>
+</head>
+<body>
+<h1>Kayak Rapids: WEIRD MODE</h1>
+<div id="wrap">
+  <div id="hud">
+    <span id="score">Score: 0</span>
+    <span id="speed">Speed: 1.0x</span>
+    <span id="hp">Hull: 100</span>
+  </div>
+  <canvas id="game" width="600" height="700"></canvas>
+  <div id="msg">
+    <div id="msgTitle">The river ate you</div>
+    <div id="msgScore"></div>
+    <button id="restart">Play Again (if you dare)</button>
+  </div>
+</div>
+<div class="keys">The river flows UP. Arrow keys are INVERTED. Rocks are ANGRY. Grab glitches. Trust nothing.</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+
+  const $score = document.getElementById('score');
+  const $speed = document.getElementById('speed');
+  const $hp = document.getElementById('hp');
+  const msg = document.getElementById('msg');
+  const msgTitle = document.getElementById('msgTitle');
+  const msgScore = document.getElementById('msgScore');
+
+  const keys = {};
+  addEventListener('keydown', e => { keys[e.key] = true; if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault(); });
+  addEventListener('keyup', e => { keys[e.key] = false; });
+
+  const kayak = {
+    x: W / 2,
+    y: 130,
+    w: 46,
+    h: 90,
+    baseSpeed: 2.2,
+    maxSpeed: 6.5,
+    steerSpeed: 3.2,
+    hull: 100,
+    dir: 1,
+  };
+
+  let obstacles = [];
+  let splashes = [];
+  let waves = [];
+  let score = 0;
+  let gameOver = false;
+  let dist = 0;
+  let time = 0;
+  let spawnTimer = 0;
+  let glitch = 0;
+  let wobble = 0;
+
+  function reset() {
+    kayak.x = W / 2; kayak.y = 130; kayak.hull = 100; kayak.dir = Math.random() < 0.5 ? -1 : 1;
+    obstacles = []; splashes = []; waves = [];
+    score = 0; dist = 0; time = 0; spawnTimer = 0; glitch = 0;
+    gameOver = false;
+    msg.style.display = 'none';
+    updateHud();
+  }
+
+  function currentSpeed() {
+    let s = kayak.baseSpeed + dist / 2200;
+    if (keys['ArrowUp']) s *= 1.8;
+    if (keys['ArrowDown']) s *= 0.35;
+    return Math.min(s, kayak.maxSpeed + dist / 4000);
+  }
+
+  function updateHud() {
+    $score.textContent = 'Score: ' + Math.floor(score);
+    $speed.textContent = 'Speed: ' + currentSpeed().toFixed(1) + 'x' + (kayak.dir === -1 ? ' (INVERTED)' : '');
+    $hp.textContent = 'Hull: ' + Math.max(0, Math.round(kayak.hull));
+  }
+
+  function spawn() {
+    const margin = 70;
+    const x = margin + Math.random() * (W - margin * 2);
+    const type = Math.random();
+    if (type < 0.6) {
+      const r = 20 + Math.random() * 22;
+      obstacles.push({ kind: 'rock', x, y: H + 50, r, vx: (Math.random() - 0.5) * 2, angry: Math.random() < 0.5 });
+    } else if (type < 0.9) {
+      const len = 56 + Math.random() * 50;
+      const w = 14 + Math.random() * 8;
+      obstacles.push({ kind: 'log', x, y: H + 50, len, w, spin: Math.random() * 6.28, spinV: (Math.random() - 0.5) * 0.2 });
+    } else {
+      splashes.push({ x, y: H + 50, r: 10, taken: false, wob: Math.random() * 6.28 });
+    }
+  }
+
+  function collide(ox, oy, radius) {
+    const kx = kayak.x, ky = kayak.y;
+    const kHalf = kayak.w / 2, kHalfY = kayak.h / 2;
+    const cx = Math.max(kx - kHalf, Math.min(ox, kx + kHalf));
+    const cy = Math.max(ky - kHalfY, Math.min(oy, ky + kHalfY));
+    const dx = ox - cx, dy = oy - cy;
+    return (dx * dx + dy * dy) < radius * radius;
+  }
+
+  function hurt(amount) {
+    kayak.hull -= amount;
+    kayak.dir *= -1;
+    if (kayak.hull <= 0) {
+      kayak.hull = 0;
+      gameOver = true;
+      msgTitle.textContent = 'SWAMPED (reversed)';
+      msgScore.textContent = 'Final score: ' + Math.floor(score) + ' (which is upside down)';
+      msg.style.display = 'block';
+    }
+    updateHud();
+  }
+
+  function update(dt) {
+    if (gameOver) return;
+
+    time += dt;
+    dist += currentSpeed();
+    score += currentSpeed() * dt;
+    if (glitch > 0) glitch -= dt;
+
+    // INVERTED steering
+    const steer = (kayak.dir * kayak.steerSpeed * dt) / 1000 * 60;
+    if (keys['ArrowLeft']) kayak.x += steer;
+    if (keys['ArrowRight']) kayak.x -= steer;
+    kayak.x = Math.max(kayak.w / 2 + 6, Math.min(W - kayak.w / 2 - 6, kayak.x));
+    // free vertical flying
+    if (keys['ArrowUp']) kayak.y -= (kayak.dir > 0 ? 0.4 : -0.4) * dt / 16.7;
+    if (keys['ArrowDown']) kayak.y += (kayak.dir > 0 ? 0.4 : -0.4) * dt / 16.7;
+    kayak.y = Math.max(50, Math.min(H - 120, kayak.y));
+
+    wobble += dt * 0.05;
+
+    const spd = currentSpeed();
+
+    spawnTimer -= dt;
+    if (spawnTimer <= 0) {
+      spawn();
+      spawnTimer = Math.max(450, 1600 - time / 15) + Math.random() * 400;
+    }
+
+    // obstacles rise upward (reverse river) and bounce off banks
+    for (const o of obstacles) {
+      o.y -= spd * 0.9;
+      if (o.kind === 'rock') {
+        o.x += o.vx;
+        if (o.x < 40 || o.x > W - 40) o.vx *= -1;
+        o.x += Math.sin(time * 0.3 + o.r) * 0.6;
+      } else {
+        o.spin += o.spinV;
+        o.x += Math.sin(time * 0.5 + o.spin * 5) * 0.8;
+      }
+    }
+    for (const s of splashes) s.y -= spd * 0.9;
+
+    obstacles = obstacles.filter(o => o.y > -100);
+    splashes = splashes.filter(s => s.y > -100);
+
+    for (const o of obstacles) {
+      const r = o.kind === 'rock' ? o.r : Math.max(o.w, o.len) * 0.5;
+      if (o.y < kayak.y + 120 && collide(o.x, o.y, r * 0.75)) {
+        if (o.kind === 'rock') hurt(18); else hurt(8);
+        o.y = -150;
+        score -= 15;
+        break;
+      }
+    }
+    for (const s of splashes) {
+      if (!s.taken && s.y < kayak.y + 80 && collide(s.x, s.y, s.r)) {
+        s.taken = true;
+        score += 60;
+        glitch = 1200;
+        kayak.dir *= -1;
+        s.y = -150;
+        updateHud();
+      }
+    }
+
+    if (Math.random() < 0.25) waves.push({ x: Math.random() * W, y: H + 10, w: 30 + Math.random() * 50, a: 0.3 + Math.random() * 0.3, s: 40 + Math.random() * 60 });
+    waves = waves.filter(w => w.y > 0);
+    for (const w of waves) w.y -= w.s * 0.05;
+
+    updateHud();
+  }
+
+  function rainbow(t) {
+    return `hsl(${(time * 0.1 + t) % 360}, 90%, 55%)`;
+  }
+
+  function drawKayak() {
+    const { x, y, w, h } = kayak;
+    const tilt = Math.sin(wobble) * 0.3;
+
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(tilt);
+
+    // banana hull
+    ctx.beginPath();
+    ctx.moveTo(0, -h / 2);
+    ctx.quadraticCurveTo(w / 2 + 6, -h / 2 + 20, w / 2, 0);
+    ctx.quadraticCurveTo(w / 2 + 6, h / 2 - 20, 0, h / 2);
+    ctx.quadraticCurveTo(-w / 2 - 6, h / 2 - 20, -w / 2, 0);
+    ctx.quadraticCurveTo(-w / 2 - 6, -h / 2 + 20, 0, -h / 2);
+    ctx.fillStyle = 'hsl(' + ((time * 0.4) % 360) + ', 95%, 60%)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,.5)';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    // face
+    ctx.fillStyle = '#000';
+    ctx.beginPath(); ctx.arc(-8, -6, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(8, -6, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(0, 6, 6, 0, Math.PI); ctx.stroke();
+
+    // paddler (confused)
+    ctx.beginPath();
+    ctx.arc(0, -16, 10, 0, Math.PI * 2);
+    ctx.fillStyle = '#f5b971';
+    ctx.fill();
+    ctx.fillStyle = '#000';
+    ctx.beginPath(); ctx.arc(-3, -18, 1.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(3, -18, 1.5, 0, Math.PI * 2); ctx.fill();
+
+    // spinning paddle
+    const ang = time * 0.2;
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(ang) * 50, Math.sin(ang) * 50);
+    ctx.lineTo(-Math.cos(ang) * 50, -Math.sin(ang) * 50);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  function draw() {
+    // psychedelic water
+    const hue = (time * 0.1) % 360;
+    const grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, 'hsl(' + hue + ', 70%, 30%)');
+    grad.addColorStop(1, 'hsl(' + ((hue + 120) % 360) + ', 80%, 20%)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    // glitch: inverted color bars
+    if (glitch > 0) {
+      for (let i = 0; i < 12; i++) {
+        ctx.fillStyle = 'rgba(' + Math.floor(Math.random() * 255) + ',' + Math.floor(Math.random() * 255) + ',' + Math.floor(Math.random() * 255) + ',0.35)';
+        ctx.fillRect(Math.random() * W, Math.random() * H, 20 + Math.random() * 120, 2 + Math.random() * 8);
+      }
+    }
+
+    // rising bubbles
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+    for (let i = 0; i < 6; i++) {
+      const x = (i * 99 + time * 0.5) % W;
+      ctx.beginPath();
+      ctx.arc(x, H - ((time * 60 + i * 300) % H), 4 + i, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // splashes (glitches)
+    for (const s of splashes) {
+      if (s.taken) continue;
+      const pulse = 1 + Math.sin(time * 4 + s.wob) * 0.3;
+      ctx.save();
+      ctx.translate(s.x, s.y);
+      ctx.rotate(s.wob);
+      ctx.fillStyle = 'rgba(0,255,0,0.9)';
+      ctx.font = '16px monospace';
+      ctx.fillText('?', -6, 6);
+      ctx.strokeStyle = 'rgba(0,255,0,0.9)';
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * 4, Math.sin(a) * 4);
+        ctx.lineTo(Math.cos(a) * 12 * pulse, Math.sin(a) * 12 * pulse);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // obstacles
+    for (const o of obstacles) {
+      if (o.kind === 'rock') {
+        const r = o.r;
+        const rg = ctx.createRadialGradient(o.x - r * 0.3, o.y - r * 0.3, r * 0.1, o.x, o.y, r);
+        rg.addColorStop(0, o.angry ? '#ffcc80' : '#90a4ae');
+        rg.addColorStop(0.7, o.angry ? '#f4511e' : '#546e7a');
+        rg.addColorStop(1, o.angry ? '#b71c1c' : '#37474f');
+        ctx.beginPath();
+        ctx.arc(o.x, o.y, r, 0, Math.PI * 2);
+        ctx.fillStyle = rg;
+        ctx.fill();
+        if (o.angry) {
+          ctx.fillStyle = '#fff';
+          ctx.beginPath(); ctx.arc(o.x - r * 0.35, o.y - r * 0.2, r * 0.18, 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.arc(o.x + r * 0.35, o.y - r * 0.2, r * 0.18, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = '#000';
+          ctx.beginPath(); ctx.arc(o.x - r * 0.35, o.y - r * 0.18, r * 0.08, 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.arc(o.x + r * 0.35, o.y - r * 0.18, r * 0.08, 0, Math.PI * 2); ctx.fill();
+          ctx.strokeStyle = '#000';
+          ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.arc(o.x, o.y - r * 0.2, r * 0.22, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke();
+        }
+      } else {
+        ctx.save();
+        ctx.translate(o.x, o.y);
+        ctx.rotate(o.spin);
+        ctx.fillStyle = 'hsl(' + ((time * 0.2) % 360) + ', 50%, 40%)';
+        ctx.beginPath();
+        ctx.roundRect(-o.len / 2, -o.w / 2, o.len, o.w, o.w / 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,.5)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    drawKayak();
+  }
+
+  function loop() {
+    update(16.7);
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  document.getElementById('restart').addEventListener('click', reset);
+
+  reset();
+  loop();
+})();
+</script>
+</body>
+</html>

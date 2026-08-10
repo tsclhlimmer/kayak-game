@@ -136,12 +136,13 @@
     const margin = 70;
     const x = margin + Math.random() * (W - margin * 2);
     const type = Math.random();
-    if (type < 0.55) {
-      const r = 16 + Math.random() * 18;
+    if (type < 0.6) {
+      const r = 20 + Math.random() * 22;
       obstacles.push({ kind: 'rock', x, r, vy: 0, s: 1 + Math.random() * 0.5 });
-    } else if (type < 0.8) {
-      const len = 46 + Math.random() * 40;
-      obstacles.push({ kind: 'log', x, len, w: 12, vy: 0, s: 1 + Math.random() * 0.5, spin: Math.random() * 0.02 });
+    } else if (type < 0.9) {
+      const len = 56 + Math.random() * 50;
+      const w = 14 + Math.random() * 8;
+      obstacles.push({ kind: 'log', x, len, w, vy: 0, s: 1 + Math.random() * 0.5, spin: Math.random() * 0.02 });
     } else {
       splashes.push({ x, y: -20, r: 10, taken: false, wob: Math.random() * 6.28 });
     }
@@ -190,7 +191,7 @@
     spawnTimer -= dt * 60;
     if (spawnTimer <= 0) {
       spawn();
-      spawnTimer = Math.max(38, 85 - hardTimer) + Math.random() * 60;
+      spawnTimer = Math.max(24, 52 - hardTimer) + Math.random() * 42;
     }
     hardTimer += dt;
 
@@ -400,21 +401,41 @@
         ctx.lineTo(o.x + o.r * 0.1, o.y - o.r * 0.9);
         ctx.stroke();
       } else {
-        // log
+        // log with bark texture
         ctx.save();
         ctx.translate(o.x, o.y);
         ctx.rotate(o.spin);
-        ctx.fillStyle = '#6d4c41';
+        const grad = ctx.createLinearGradient(0, -o.w / 2, 0, o.w / 2);
+        grad.addColorStop(0, '#8d6e63');
+        grad.addColorStop(0.5, '#5d4037');
+        grad.addColorStop(1, '#3e2723');
+        ctx.fillStyle = grad;
         ctx.beginPath();
-        ctx.rect(-o.len / 2, -o.w / 2, o.len, o.w);
+        ctx.roundRect(-o.len / 2, -o.w / 2, o.len, o.w, o.w / 2);
         ctx.fill();
-        ctx.strokeStyle = '#3e2723';
+        ctx.strokeStyle = '#2f1c14';
         ctx.lineWidth = 2;
         ctx.stroke();
+        // wood grain lines
+        ctx.strokeStyle = 'rgba(120,90,60,0.6)';
+        ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.arc(0, -o.w / 2, 4, 0, Math.PI * 2);
-        ctx.fillStyle = '#a1887f';
+        ctx.moveTo(-o.len / 2 + 8, -2);
+        ctx.quadraticCurveTo(0, -6, o.len / 2 - 8, 0);
+        ctx.moveTo(-o.len / 2 + 8, 2);
+        ctx.quadraticCurveTo(0, 6, o.len / 2 - 8, 0);
+        ctx.stroke();
+        // cut ends (rings)
+        ctx.fillStyle = '#8d6e63';
+        ctx.beginPath();
+        ctx.arc(-o.len / 2, 0, o.w / 2, 0, Math.PI * 2);
         ctx.fill();
+        ctx.strokeStyle = '#4e342e';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(-o.len / 2, 0, o.w * 0.18, 0, Math.PI * 2);
+        ctx.stroke();
         ctx.restore();
       }
     }

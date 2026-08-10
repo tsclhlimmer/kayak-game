@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Kayak Rapids — Mobile</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    touch-action: none;
+    overscroll-behavior: none;
+    background: #0b2a1a;
+    font-family: system-ui, sans-serif;
+    color: #e8f5e9;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  #stage {
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px;
+  }
+  h1 { font-size: 18px; letter-spacing: 2px; color: #a5d6a7; }
+  #wrap { position: relative; line-height: 0; }
+  canvas {
+    display: block;
+    background: #1a5276;
+    border-radius: 10px;
+    box-shadow: 0 8px 30px rgba(0,0,0,.5);
+    touch-action: none;
+  }
+  #hud {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 12px;
+    font-size: 14px;
+    font-weight: bold;
+    text-shadow: 0 1px 3px rgba(0,0,0,.8);
+    z-index: 5;
+    pointer-events: none;
+  }
+  #msg {
+    position: absolute;
+    top: 40%; left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    background: rgba(0,0,0,.8);
+    padding: 22px 28px;
+    border-radius: 12px;
+    display: none;
+    font-size: 18px;
+    line-height: 1.5;
+    z-index: 10;
+  }
+  #msg button {
+    margin-top: 14px;
+    padding: 12px 28px;
+    font-size: 16px;
+    border: none;
+    border-radius: 8px;
+    background: #43a047;
+    color: white;
+    cursor: pointer;
+  }
+  #msg button:active { background: #2e7d32; }
+
+  /* touch controls */
+  #controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    gap: 10px;
+    padding: 4px 12px;
+    z-index: 6;
+  }
+  .ctl {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 64px;
+    font-size: 30px;
+    font-weight: bold;
+    color: #e8f5e9;
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 12px;
+    touch-action: none;
+    user-select: none;
+  }
+  .ctl:active, .ctl.pressed { background: rgba(67,160,71,0.6); }
+  .ctl.small { flex: 0.7; height: 56px; font-size: 22px; }
+  #hint { font-size: 12px; opacity: .75; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <h1>Kayak Rapids</h1>
+  <div id="wrap">
+    <div id="hud">
+      <span id="score">Score: 0</span>
+      <span id="speed">Speed: 1.0x</span>
+      <span id="hp">Hull: 100</span>
+    </div>
+    <canvas id="game" width="600" height="700"></canvas>
+    <div id="msg">
+      <div id="msgTitle">Game Over</div>
+      <div id="msgScore"></div>
+      <button id="restart">Play Again</button>
+    </div>
+  </div>
+  <div id="controls">
+    <div class="ctl" id="btnL">&#9664;</div>
+    <div class="ctl small" id="btnUp">&#9650;</div>
+    <div class="ctl small" id="btnDown">&#9660;</div>
+    <div class="ctl" id="btnR">&#9654;</div>
+  </div>
+  <div id="hint">Hold &#9664;/&#9654; to steer &middot; &#9650; paddle &middot; &#9660; brake</div>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+
+  // Logical game resolution (unchanged by screen size)
+  const W = 600, H = 700;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  ctx.scale(dpr, dpr);
+
+  // Scale canvas to fit the phone screen
+  function resize() {
+    const availW = window.innerWidth - 16;
+    const availH = window.innerHeight - 8 - 56 - 70 - 24; // controls + hint + gaps
+    const s = Math.min(availW / W, availH / H);
+    canvas.style.width = Math.floor(W * s) + 'px';
+    canvas.style.height = Math.floor(H * s) + 'px';
+  }
+  window.addEventListener('resize', resize);
+  window.addEventListener('orientationchange', resize);
+  resize();
+
+  const $score = document.getElementById('score');
+  const $speed = document.getElementById('speed');
+  const $hp = document.getElementById('hp');
+  const msg = document.getElementById('msg');
+  const msgTitle = document.getElementById('msgTitle');
+  const msgScore = document.getElementById('msgScore');
+
+  const keys = {};
+  addEventListener('keydown', e => { keys[e.key] = true; if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault(); });
+  addEventListener('keyup', e => { keys[e.key] = false; });
+
+  // Touch buttons act as arrow keys
+  const bind = (id, key) => {
+    const el = document.getElementById(id);
+    const on = e => { e.preventDefault(); keys[key] = true; el.classList.add('pressed'); };
+    const off = e => { keys[key] = false; el.classList.remove('pressed'); };
+    el.addEventListener('pointerdown', on);
+    el.addEventListener('pointerup', off);
+    el.addEventListener('pointercancel', off);
+    el.addEventListener('pointerleave', off);
+    el.addEventListener('contextmenu', e => e.preventDefault());
+  };
+  bind('btnL', 'ArrowLeft');
+  bind('btnR', 'ArrowRight');
+  bind('btnUp', 'ArrowUp');
+  bind('btnDown', 'ArrowDown');
+
+  const kayak = {
+    x: W / 2,
+    y: H - 130,
+    w: 46,
+    h: 90,
+    baseSpeed: 2.2,
+    maxSpeed: 6.5,
+    steerSpeed: 3.2,
+    hull: 100,
+  };
+
+  let obstacles = [];
+  let splashes = [];
+  let waves = [];
+  let score = 0;
+  let gameOver = false;
+  let dist = 0;
+  let time = 0;
+  let spawnTimer = 0;
+  let hardTimer = 0;
+  let log = 0;
+
+  function reset() {
+    kayak.x = W / 2; kayak.y = H - 130; kayak.hull = 100;
+    obstacles = []; splashes = []; waves = [];
+    score = 0; dist = 0; time = 0; spawnTimer = 0; hardTimer = 0;
+    gameOver = false; log = 0;
+    msg.style.display = 'none';
+    updateHud();
+  }
+
+  function currentSpeed() {
+    let s = kayak.baseSpeed + dist / 2200;
+    if (keys['ArrowUp']) s *= 1.8;
+    if (keys['ArrowDown']) s *= 0.35;
+    return Math.min(s, kayak.maxSpeed + dist / 4000);
+  }
+
+  function updateHud() {
+    $score.textContent = 'Score: ' + Math.floor(score);
+    $speed.textContent = 'Speed: ' + currentSpeed().toFixed(1) + 'x';
+    $hp.textContent = 'Hull: ' + Math.max(0, Math.round(kayak.hull));
+  }
+
+  function spawn() {
+    const margin = 70;
+    const x = margin + Math.random() * (W - margin * 2);
+    const type = Math.random();
+    if (type < 0.6) {
+      const r = 20 + Math.random() * 22;
+      obstacles.push({ kind: 'rock', x, y: -20, r, vy: 0, s: 1 + Math.random() * 0.5 });
+    } else if (type < 0.9) {
+      const len = 56 + Math.random() * 50;
+      const w = 14 + Math.random() * 8;
+      obstacles.push({ kind: 'log', x, y: -20, len, w, vy: 0, s: 1 + Math.random() * 0.5, spin: Math.random() * 0.02 });
+    } else {
+      splashes.push({ x, y: -20, r: 10, taken: false, wob: Math.random() * 6.28 });
+    }
+  }
+
+  function collide(ox, oy, radius) {
+    const kx = kayak.x, ky = kayak.y;
+    const kHalf = kayak.w / 2, kHalfY = kayak.h / 2;
+    const cx = Math.max(kx - kHalf, Math.min(ox, kx + kHalf));
+    const cy = Math.max(ky - kHalfY, Math.min(oy, ky + kHalfY));
+    const dx = ox - cx, dy = oy - cy;
+    return (dx * dx + dy * dy) < radius * radius;
+  }
+
+  function hurt(amount) {
+    kayak.hull -= amount;
+    if (kayak.hull <= 0) {
+      kayak.hull = 0;
+      gameOver = true;
+      msgTitle.textContent = 'Swamped!';
+      msgScore.textContent = 'You flipped. Final score: ' + Math.floor(score);
+      msg.style.display = 'block';
+    }
+    updateHud();
+  }
+
+  function update(dt) {
+    if (gameOver) return;
+
+    time += dt;
+    dist += currentSpeed();
+    score += currentSpeed() * dt;
+
+    if (keys['ArrowLeft']) kayak.x -= kayak.steerSpeed * dt * 60 / 1000 * (60/60);
+    if (keys['ArrowRight']) kayak.x += kayak.steerSpeed * dt * 60 / 1000 * (60/60);
+    kayak.x = Math.max(kayak.w / 2 + 6, Math.min(W - kayak.w / 2 - 6, kayak.x));
+
+    log += dt * (2 + currentSpeed());
+
+    const spd = currentSpeed();
+
+    spawnTimer -= dt;
+    if (spawnTimer <= 0) {
+      spawn();
+      spawnTimer = Math.max(450, 1600 - time / 15) + Math.random() * 400;
+    }
+    hardTimer += dt;
+
+    for (const o of obstacles) {
+      o.y += spd * 0.9;
+      o.x += Math.sin(time * 0.5 + o.s * 7) * 0.4;
+      if (o.kind === 'log') o.spin += 0.01;
+    }
+    for (const s of splashes) s.y += spd * 0.9;
+
+    obstacles = obstacles.filter(o => o.y < H + 100);
+    splashes = splashes.filter(s => s.y < H + 100);
+
+    for (const o of obstacles) {
+      const r = o.kind === 'rock' ? o.r : Math.max(o.w, o.len) * 0.5;
+      if (o.y > kayak.y - 120 && collide(o.x, o.y, r * 0.75)) {
+        if (o.kind === 'rock') hurt(18); else hurt(8);
+        o.y = H + 200;
+        score -= 15;
+        break;
+      }
+    }
+    for (const s of splashes) {
+      if (!s.taken && s.y > kayak.y - 80 && collide(s.x, s.y, s.r)) {
+        s.taken = true;
+        score += 60;
+        s.y = H + 200;
+        updateHud();
+      }
+    }
+
+    if (Math.random() < 0.25) waves.push({ x: Math.random() * W, y: -10, w: 30 + Math.random() * 50, a: 0.3 + Math.random() * 0.3, s: 40 + Math.random() * 60 });
+    waves = waves.filter(w => w.y < H);
+
+    updateHud();
+  }
+
+  function drawKayak() {
+    const { x, y, w, h } = kayak;
+    const tilt = (keys['ArrowLeft'] ? -1 : keys['ArrowRight'] ? 1 : 0) * 0.12;
+
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(tilt);
+
+    ctx.beginPath();
+    ctx.moveTo(0, -h / 2);
+    ctx.quadraticCurveTo(w / 2 + 4, -h / 2 + 20, w / 2, 0);
+    ctx.quadraticCurveTo(w / 2 + 4, h / 2 - 20, 0, h / 2);
+    ctx.quadraticCurveTo(-w / 2 - 4, h / 2 - 20, -w / 2, 0);
+    ctx.quadraticCurveTo(-w / 2 - 4, -h / 2 + 20, 0, -h / 2);
+    ctx.fillStyle = '#2e7d32';
+    ctx.fill();
+    ctx.strokeStyle = '#1b5e20';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.ellipse(0, 0, w * 0.34, h * 0.38, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#10271b';
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(0, -4, 11, 0, Math.PI * 2);
+    ctx.fillStyle = '#f5b971';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(0, -8, 12, Math.PI, 0);
+    ctx.fillStyle = '#c62828';
+    ctx.fill();
+    ctx.fillStyle = '#1565c0';
+    ctx.fillRect(-8, 6, 16, 12);
+    ctx.strokeStyle = '#0d47a1';
+    ctx.strokeRect(-8, 6, 16, 12);
+
+    const pl = 60;
+    const phase = Math.sin(log);
+    const ang = -0.9 + phase * 0.55;
+    const px = Math.cos(ang) * pl;
+    const py = Math.sin(ang) * pl + 8;
+    ctx.strokeStyle = '#8d6e63';
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(-px, -py);
+    ctx.lineTo(px, py);
+    ctx.stroke();
+    ctx.fillStyle = '#5d4037';
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(ang);
+    ctx.beginPath();
+    ctx.ellipse(4, 0, 14, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    ctx.save();
+    ctx.translate(-px, -py);
+    ctx.rotate(ang);
+    ctx.beginPath();
+    ctx.ellipse(-4, 0, 14, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    ctx.restore();
+
+    if (currentSpeed() > 3) {
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      for (let i = 0; i < 4; i++) {
+        const a = Math.random() * Math.PI * 2;
+        ctx.beginPath();
+        ctx.arc(x + Math.cos(a) * (w / 2 + 6), y + h / 2 + 6, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  function draw() {
+    const grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, '#145a85');
+    grad.addColorStop(1, '#0f3d5e');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.14)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 8; i++) {
+      const x = (i * 77 + time * 20) % (W + 60) - 30;
+      for (let yy = 0; yy < H; yy += 90) {
+        ctx.beginPath();
+        ctx.moveTo(x, yy + ((time * 40 + i * 50) % 90));
+        ctx.lineTo(x + 20, yy + ((time * 40 + i * 50) % 90));
+        ctx.stroke();
+      }
+    }
+
+    ctx.fillStyle = '#2e7d32';
+    ctx.fillRect(0, 0, 10, H);
+    ctx.fillRect(W - 10, 0, 10, H);
+    ctx.fillStyle = '#1b5e20';
+    ctx.fillRect(0, 0, 6, H);
+    ctx.fillRect(W - 6, 0, 6, H);
+
+    for (const w of waves) {
+      ctx.beginPath();
+      const a = w.a * (1 - w.y / H);
+      ctx.strokeStyle = 'rgba(255,255,255,' + a + ')';
+      ctx.lineWidth = 2;
+      ctx.moveTo(w.x, w.y);
+      ctx.quadraticCurveTo(w.x + w.w / 2, w.y - 8, w.x + w.w, w.y);
+      ctx.stroke();
+      w.y += w.s * 0.05;
+    }
+
+    for (const s of splashes) {
+      if (s.taken) continue;
+      const pulse = 1 + Math.sin(time * 4 + s.wob) * 0.15;
+      ctx.save();
+      ctx.translate(s.x, s.y);
+      ctx.rotate(s.wob);
+      ctx.strokeStyle = 'rgba(120,220,255,0.9)';
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * 4, Math.sin(a) * 4);
+        ctx.lineTo(Math.cos(a) * 10 * pulse, Math.sin(a) * 10 * pulse);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    for (const o of obstacles) {
+      if (o.kind === 'rock') {
+        const rg = ctx.createRadialGradient(o.x - o.r * 0.3, o.y - o.r * 0.3, o.r * 0.1, o.x, o.y, o.r);
+        rg.addColorStop(0, '#90a4ae');
+        rg.addColorStop(0.7, '#546e7a');
+        rg.addColorStop(1, '#37474f');
+        ctx.beginPath();
+        ctx.arc(o.x, o.y, o.r, 0, Math.PI * 2);
+        ctx.fillStyle = rg;
+        ctx.fill();
+        ctx.strokeStyle = '#263238';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(o.x - o.r * 0.3, o.y - o.r * 0.35, o.r * 0.35, Math.PI * 1.2, Math.PI * 1.8);
+        ctx.stroke();
+      } else {
+        ctx.save();
+        ctx.translate(o.x, o.y);
+        ctx.rotate(o.spin);
+        const lg = ctx.createLinearGradient(0, -o.w / 2, 0, o.w / 2);
+        lg.addColorStop(0, '#8d6e63');
+        lg.addColorStop(0.5, '#5d4037');
+        lg.addColorStop(1, '#3e2723');
+        ctx.fillStyle = lg;
+        ctx.beginPath();
+        ctx.roundRect(-o.len / 2, -o.w / 2, o.len, o.w, o.w / 2);
+        ctx.fill();
+        ctx.strokeStyle = '#2f1c14';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(120,90,60,0.6)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(-o.len / 2 + 8, -2);
+        ctx.quadraticCurveTo(0, -6, o.len / 2 - 8, 0);
+        ctx.moveTo(-o.len / 2 + 8, 2);
+        ctx.quadraticCurveTo(0, 6, o.len / 2 - 8, 0);
+        ctx.stroke();
+        ctx.fillStyle = '#8d6e63';
+        ctx.beginPath();
+        ctx.arc(-o.len / 2, 0, o.w / 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#4e342e';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(-o.len / 2, 0, o.w * 0.18, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    drawKayak();
+
+    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    for (let i = 0; i < 6; i++) {
+      const sx = Math.random() * W;
+      ctx.beginPath();
+      ctx.arc(sx, H - Math.random() * 14, 2 + Math.random() * 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function loop() {
+    update(16.7);
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  document.getElementById('restart').addEventListener('click', reset);
+
+  // block pinch-zoom / scroll gestures
+  document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+  document.addEventListener('gesturestart', e => e.preventDefault());
+  document.addEventListener('contextmenu', e => e.preventDefault());
+
+  reset();
+  loop();
+})();
+</script>
+</body>
+</html>

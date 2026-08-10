@@ -264,21 +264,19 @@ public class KayakGame extends JPanel implements ActionListener, KeyListener {
         for (Obstacle o : obstacles) {
             if (o.rock) {
                 int r = (int) o.size;
-                Path2D p = new Path2D.Double();
-                p.moveTo(o.x - r, o.y + r * 0.4);
-                p.lineTo(o.x - r * 0.6, o.y - r * 0.6);
-                p.lineTo(o.x, o.y - r);
-                p.lineTo(o.x + r * 0.7, o.y - r * 0.4);
-                p.lineTo(o.x + r, o.y + r * 0.5);
-                p.closePath();
-                g2.setColor(new Color(0x546e7a));
-                g2.fill(p);
-                g2.setColor(new Color(0x37474f));
-                g2.setStroke(new BasicStroke(3));
-                g2.draw(p);
-                g2.setColor(new Color(255, 255, 255, 64));
+                float[] fracs = {0f, 0.7f, 1f};
+                Color[] cols = {new Color(0x90a4ae), new Color(0x546e7a), new Color(0x37474f)};
+                g2.setPaint(new RadialGradientPaint(
+                        new Point2D.Double(o.x - r * 0.3, o.y - r * 0.3), r,
+                        new Point2D.Double(o.x, o.y), fracs, cols));
+                g2.fillOval((int) (o.x - r), (int) (o.y - r), r * 2, r * 2);
+                g2.setColor(new Color(0x263238));
                 g2.setStroke(new BasicStroke(2));
-                g2.drawLine((int) (o.x - r * 0.4), (int) (o.y - r * 0.7), (int) (o.x + r * 0.1), (int) (o.y - r * 0.9));
+                g2.drawOval((int) (o.x - r), (int) (o.y - r), r * 2, r * 2);
+                g2.setColor(new Color(255, 255, 255, 90));
+                g2.setStroke(new BasicStroke(2));
+                g2.drawArc((int) (o.x - r * 0.65), (int) (o.y - r * 0.7), (int) (r * 0.7), (int) (r * 0.7),
+                        (int) Math.toDegrees(Math.PI * 1.2), (int) Math.toDegrees(Math.PI * 0.6));
             } else {
                 g2.translate(o.x, o.y);
                 g2.rotate(o.spin);

@@ -381,24 +381,22 @@
     // obstacles
     for (const o of obstacles) {
       if (o.kind === 'rock') {
+        const grad = ctx.createRadialGradient(o.x - o.r * 0.3, o.y - o.r * 0.3, o.r * 0.1, o.x, o.y, o.r);
+        grad.addColorStop(0, '#90a4ae');
+        grad.addColorStop(0.7, '#546e7a');
+        grad.addColorStop(1, '#37474f');
         ctx.beginPath();
-        ctx.moveTo(o.x - o.r, o.y + o.r * 0.4);
-        ctx.lineTo(o.x - o.r * 0.6, o.y - o.r * 0.6);
-        ctx.lineTo(o.x, o.y - o.r);
-        ctx.lineTo(o.x + o.r * 0.7, o.y - o.r * 0.4);
-        ctx.lineTo(o.x + o.r, o.y + o.r * 0.5);
-        ctx.closePath();
-        ctx.fillStyle = '#546e7a';
+        ctx.arc(o.x, o.y, o.r, 0, Math.PI * 2);
+        ctx.fillStyle = grad;
         ctx.fill();
-        ctx.strokeStyle = '#37474f';
-        ctx.lineWidth = 3;
+        ctx.strokeStyle = '#263238';
+        ctx.lineWidth = 2;
         ctx.stroke();
         // highlight
-        ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.moveTo(o.x - o.r * 0.4, o.y - o.r * 0.7);
-        ctx.lineTo(o.x + o.r * 0.1, o.y - o.r * 0.9);
+        ctx.arc(o.x - o.r * 0.3, o.y - o.r * 0.35, o.r * 0.35, Math.PI * 1.2, Math.PI * 1.8);
         ctx.stroke();
       } else {
         // log with bark texture

@@ -43,7 +43,7 @@
     display: flex;
     justify-content: space-between;
     padding: 8px 12px;
-    font-size: 14px;
+    font-size: 13px;
     font-weight: bold;
     text-shadow: 0 1px 3px rgba(0,0,0,.8);
     z-index: 5;
@@ -110,6 +110,7 @@
   <div id="wrap">
     <div id="hud">
       <span id="score">Score: 0</span>
+      <span id="best">Best: 0</span>
       <span id="speed">Speed: 1.0x</span>
       <span id="hp">Hull: 100</span>
     </div>
@@ -154,6 +155,7 @@
   resize();
 
   const $score = document.getElementById('score');
+  const $best = document.getElementById('best');
   const $speed = document.getElementById('speed');
   const $hp = document.getElementById('hp');
   const msg = document.getElementById('msg');
@@ -195,6 +197,8 @@
   let splashes = [];
   let waves = [];
   let score = 0;
+  let highScore = 0;
+  try { highScore = parseInt(localStorage.getItem('kayakHighScore') || '0', 10) || 0; } catch (e) {}
   let gameOver = false;
   let dist = 0;
   let time = 0;
@@ -220,6 +224,7 @@
 
   function updateHud() {
     $score.textContent = 'Score: ' + Math.floor(score);
+    $best.textContent = 'Best: ' + highScore;
     $speed.textContent = 'Speed: ' + currentSpeed().toFixed(1) + 'x';
     $hp.textContent = 'Hull: ' + Math.max(0, Math.round(kayak.hull));
   }
@@ -254,8 +259,16 @@
     if (kayak.hull <= 0) {
       kayak.hull = 0;
       gameOver = true;
+      const finalScore = Math.floor(score);
+      const newBest = finalScore > highScore;
+      if (newBest) {
+        highScore = finalScore;
+        try { localStorage.setItem('kayakHighScore', String(highScore)); } catch (e) {}
+      }
       msgTitle.textContent = 'Swamped!';
-      msgScore.textContent = 'You flipped. Final score: ' + Math.floor(score);
+      msgScore.textContent = newBest
+        ? 'New High Score: ' + finalScore + '!'
+        : 'You flipped. Final score: ' + finalScore + ' (Best: ' + highScore + ')';
       msg.style.display = 'block';
     }
     updateHud();

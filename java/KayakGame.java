@@ -6,6 +6,8 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.prefs.Preferences;
+import java.awt.MultipleGradientPaint.CycleMethod;
 
 public class KayakGame extends JPanel implements ActionListener, KeyListener {
     static final int W = 640, H = 720;
@@ -21,6 +23,9 @@ public class KayakGame extends JPanel implements ActionListener, KeyListener {
     double hull = 100, score = 0, dist = 0, time = 0;
     double paddlePhase = 0;
     double hardTimer = 0, spawnTimer = 0;
+    int highScore;
+
+    final Preferences prefs = Preferences.userNodeForPackage(KayakGame.class);
 
     final Set<Integer> keys = new HashSet<>();
     final List<Obstacle> obstacles = new ArrayList<>();
@@ -55,6 +60,7 @@ public class KayakGame extends JPanel implements ActionListener, KeyListener {
         setPreferredSize(new Dimension(W, H));
         setFocusable(true);
         addKeyListener(this);
+        highScore = prefs.getInt("highScore", 0);
         timer = new Timer(TICK, this);
         timer.start();
     }
@@ -93,7 +99,14 @@ public class KayakGame extends JPanel implements ActionListener, KeyListener {
             double a = Math.random() * Math.PI * 2;
             particles.add(new Particle(kx, ky, Math.cos(a) * 60, Math.sin(a) * 60 - 40, new Color(255, 200, 90), 0.6));
         }
-        if (hull <= 0) { hull = 0; state = State.GAME_OVER; }
+        if (hull <= 0) {
+            hull = 0;
+            state = State.GAME_OVER;
+            if ((int) score > highScore) {
+                highScore = (int) score;
+                prefs.putInt("highScore", highScore);
+            }
+        }
     }
 
     boolean collide(double ox, double oy, double radius) {
@@ -268,7 +281,7 @@ public class KayakGame extends JPanel implements ActionListener, KeyListener {
                 Color[] cols = {new Color(0x90a4ae), new Color(0x546e7a), new Color(0x37474f)};
                 g2.setPaint(new RadialGradientPaint(
                         new Point2D.Double(o.x - r * 0.3, o.y - r * 0.3), r,
-                        new Point2D.Double(o.x, o.y), fracs, cols));
+                        new Point2D.Double(o.x, o.y), fracs, cols, CycleMethod.NO_CYCLE));
                 g2.fillOval((int) (o.x - r), (int) (o.y - r), r * 2, r * 2);
                 g2.setColor(new Color(0x263238));
                 g2.setStroke(new BasicStroke(2));
@@ -330,7 +343,8 @@ public class KayakGame extends JPanel implements ActionListener, KeyListener {
         g2.setFont(new Font("SansSerif", Font.BOLD, 18));
         g2.setColor(Color.WHITE);
         g2.drawString("Score: " + (int) score, 16, 30);
-        g2.drawString("Speed: " + String.format("%.1f", currentSpeed()) + "x", 16, 54);
+        g2.drawString("Best: " + highScore, 16, 54);
+        g2.drawString("Speed: " + String.format("%.1f", currentSpeed()) + "x", 150, 30);
         g2.setColor(new Color(255, 255, 255, 200));
         g2.fillRect(420, 12, 130, 16);
         g2.setColor(hull > 50 ? new Color(0x43a047) : hull > 25 ? new Color(0xf9a825) : new Color(0xe53935));
@@ -364,6 +378,7 @@ public class KayakGame extends JPanel implements ActionListener, KeyListener {
         g2.setFont(new Font("SansSerif", Font.BOLD, 22));
         g2.setColor(Color.WHITE);
         g2.drawString("Final score: " + (int) score, W / 2 - 100, 330);
+        g2.drawString("Best: " + highScore, W / 2 - 60, 360);
         g2.setFont(new Font("SansSerif", Font.BOLD, 20));
         g2.setColor(new Color(0x43a047));
         g2.drawString("PRESS ENTER TO PLAY AGAIN", W / 2 - 150, 400);
